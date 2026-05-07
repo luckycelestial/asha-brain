@@ -1,71 +1,91 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Asha AI Console</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoxAI - Asha Live</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@300;600&display=swap" rel="stylesheet">
     <style>
-        body { margin: 0; background: #050505; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
-        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 30px; padding: 50px; text-align: center; width: 350px; }
-        .orb { width: 100px; height: 100px; border-radius: 50%; background: radial-gradient(circle, #8A2BE2, #4B0082); margin: 0 auto 20px; box-shadow: 0 0 30px #8A2BE2; animation: b 2s infinite; }
-        @keyframes b { 50% { transform: scale(1.1); filter: brightness(1.2); } }
-        button { background: white; border: none; padding: 15px 40px; border-radius: 30px; font-weight: bold; cursor: pointer; }
-        #status { font-size: 0.8rem; color: #666; margin-top: 20px; font-family: monospace; }
+        :root { --primary: #4285f4; --bg: #0a0a0c; --card-bg: rgba(255, 255, 255, 0.05); --text: #ffffff; --text-dim: #9ca3af; --accent: #8ab4f8; --ai-accent: #a855f7; --user-accent: #6366f1; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background-color: var(--bg); color: var(--text); display: flex; align-items: center; justify-content: center; min-height: 100vh; background-image: radial-gradient(circle at 0% 0%, rgba(66, 133, 244, 0.15) 0%, transparent 50%), radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.15) 0%, transparent 50%); }
+        .glass-card { background: var(--card-bg); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 32px; padding: 2.5rem; width: 400px; text-align: center; }
+        .status-badge { display: inline-flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1.2rem; border-radius: 100px; background: rgba(255, 255, 255, 0.03); font-size: 0.7rem; color: var(--text-dim); margin-bottom: 1.5rem; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
+        .status-dot.active { background: #10b981; box-shadow: 0 0 15px #10b981; animation: pulse 2s infinite; }
+        @keyframes pulse { 50% { transform: scale(1.2); opacity: 0.7; } }
+        .gradient-text { font-family: 'Outfit', sans-serif; font-size: 2.5rem; background: linear-gradient(135deg, #fff 0%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .visualizer-box { height: 120px; background: rgba(0,0,0,0.3); border-radius: 20px; margin: 20px 0; display: flex; align-items: center; justify-content: center; gap: 4px; overflow: hidden; }
+        .wave-bar { width: 4px; height: 10px; background: var(--user-accent); border-radius: 10px; transition: height 0.1s; }
+        .call-btn { width: 80px; height: 80px; border-radius: 50%; border: none; cursor: pointer; background: #10b981; color: white; transition: 0.4s; }
+        .call-btn.active { background: #ef4444; transform: rotate(135deg); }
+        .transcript-box { height: 200px; background: rgba(0,0,0,0.4); border-radius: 20px; margin-top: 20px; padding: 15px; text-align: left; overflow-y: auto; font-size: 0.85rem; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 8px 12px; border-radius: 12px; max-width: 90%; line-height: 1.4; }
+        .msg.ai { background: rgba(168, 85, 247, 0.1); border-left: 2px solid var(--ai-accent); color: #e9d5ff; align-self: flex-start; }
     </style>
 </head>
 <body>
-    <div class="glass">
-        <div class="orb"></div>
-        <h1>ASHA AI</h1>
-        <button id="micBtn">START MIC TEST</button>
-        <div id="status">Ready.</div>
+    <div class="glass-card">
+        <div class="status-badge"><div id="status-dot" class="status-dot"></div><span id="status-text">Disconnected</span></div>
+        <h1 class="gradient-text">Asha Live</h1>
+        <p style="color: var(--text-dim); font-size: 0.9rem; margin-top: 5px;">Tanglish Appointment Assistant</p>
+        <div class="visualizer-box" id="visualizer"></div>
+        <button id="call-btn" class="call-btn"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M6.62,10.79C8.06,13.62 10.38,15.94 13.21,17.38L15.41,15.18C15.69,14.9 16.08,14.82 16.43,14.93C17.55,15.3 18.75,15.5 20,15.5A1,1 0 0,1 21,16.5V20A1,1 0 0,1 20,21A17,17 0 0,1 3,4A1,1 0 0,1 4,3H7.5A1,1 0 0,1 8.5,4C8.5,5.25 8.7,6.45 9.07,7.57C9.18,7.92 9.1,8.31 8.82,8.59L6.62,10.79Z"/></svg></button>
+        <div id="transcript" class="transcript-box"></div>
     </div>
 
     <script>
-        const status = document.getElementById('status');
-        const btn = document.getElementById('micBtn');
-        let ws;
-        let audioCtx;
+        const callBtn = document.getElementById('call-btn'), transcript = document.getElementById('transcript'), dot = document.getElementById('status-dot'), sText = document.getElementById('status-text');
+        const visualizer = document.getElementById('visualizer');
+        for(let i=0; i<30; i++) { const b = document.createElement('div'); b.className = 'wave-bar'; visualizer.appendChild(b); }
+        const bars = document.querySelectorAll('.wave-bar');
 
-        btn.onclick = async () => {
-            if (ws) return;
-            
-            // WAKE UP AUDIO CONTEXT
+        let ws, audioCtx, isCalling = false;
+
+        callBtn.onclick = async () => {
+            if (isCalling) { location.reload(); return; }
+            isCalling = true;
+            callBtn.classList.add('active'); dot.classList.add('active'); sText.innerText = "Connecting...";
+
             audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-            if (audioCtx.state === 'suspended') await audioCtx.resume();
-            
-            status.innerText = "Connecting...";
+            await audioCtx.resume();
+
             ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-            ws.binaryType = "arraybuffer"; // FORCE ARRAYBUFFER
-            
-            ws.onopen = () => { status.innerText = "Bridge Open. Talk now."; btn.innerText = "LISTENING..."; };
-            
+            ws.binaryType = "arraybuffer";
+
+            ws.onopen = () => { sText.innerText = "Live"; addMsg("System", "Bridge Active. Start talking."); startMic(); };
             ws.onmessage = async (e) => {
                 if (e.data instanceof ArrayBuffer) {
-                    try {
-                        status.innerText = "Asha is Speaking...";
-                        const audioBuffer = await audioCtx.decodeAudioData(e.data);
-                        const source = audioCtx.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(audioCtx.destination);
-                        source.start();
-                    } catch (err) { console.error("Audio Decode Error", err); }
+                    const buf = await audioCtx.decodeAudioData(e.data);
+                    const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(audioCtx.destination); src.start();
+                    bars.forEach(b => b.style.height = (10 + Math.random()*80)+'px');
+                } else {
+                    const data = JSON.parse(e.data);
+                    if (data.type === "transcript") addMsg("Asha", data.text);
                 }
             };
+        };
 
+        async function startMic() {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const micCtx = new AudioContext({ sampleRate: 16000 });
-            const source = micCtx.createMediaStreamSource(stream);
-            const processor = micCtx.createScriptProcessor(4096, 1, 1);
-            
-            processor.onaudioprocess = (e) => {
+            const src = micCtx.createMediaStreamSource(stream);
+            const proc = micCtx.createScriptProcessor(4096, 1, 1);
+            proc.onaudioprocess = (e) => {
                 const input = e.inputBuffer.getChannelData(0);
                 const pcm = new Int16Array(input.length);
-                for (let i = 0; i < input.length; i++) pcm[i] = input[i] * 0x7FFF;
-                if (ws.readyState === WebSocket.OPEN) ws.send(pcm.buffer);
+                for (let i=0; i<input.length; i++) pcm[i] = input[i] * 0x7FFF;
+                if (ws.readyState === 1) ws.send(pcm.buffer);
+                for(let i=0; i<10; i++) bars[i].style.height = (10 + Math.abs(input[i*100])*100)+'px';
             };
+            src.connect(proc); proc.connect(micCtx.destination);
+        }
 
-            source.connect(processor);
-            processor.connect(micCtx.destination);
-        };
+        function addMsg(who, text) {
+            const div = document.createElement('div'); div.className = 'msg ' + who.toLowerCase();
+            div.innerHTML = `<strong>${who}:</strong> ${text}`;
+            transcript.appendChild(div); transcript.scrollTop = transcript.scrollHeight;
+        }
     </script>
 </body>
 </html>
