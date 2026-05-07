@@ -3,24 +3,20 @@
 <head>
     <title>Asha AI Console</title>
     <style>
-        body { margin: 0; background: #050505; color: white; font-family: 'Inter', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
-        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 30px; padding: 50px; text-align: center; width: 350px; box-shadow: 0 30px 60px rgba(0,0,0,0.5); }
-        .orb { width: 110px; height: 110px; border-radius: 50%; background: radial-gradient(circle, #8A2BE2, #4B0082); margin: 0 auto 30px; box-shadow: 0 0 50px #8A2BE2; animation: breathe 3s infinite ease-in-out; }
-        @keyframes breathe { 0%, 100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.1); filter: brightness(1.3); box-shadow: 0 0 70px #9370DB; } }
-        h1 { font-weight: 300; letter-spacing: 3px; margin-bottom: 5px; }
-        p { color: #666; font-size: 0.8rem; margin-bottom: 30px; }
-        button { background: white; color: black; border: none; padding: 15px 40px; border-radius: 40px; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        button:hover { transform: scale(1.05); box-shadow: 0 10px 20px rgba(255,255,255,0.2); }
-        #status { font-family: monospace; font-size: 0.7rem; margin-top: 20px; color: #444; }
+        body { margin: 0; background: #050505; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 30px; padding: 50px; text-align: center; width: 350px; }
+        .orb { width: 100px; height: 100px; border-radius: 50%; background: radial-gradient(circle, #8A2BE2, #4B0082); margin: 0 auto 20px; box-shadow: 0 0 30px #8A2BE2; animation: b 2s infinite; }
+        @keyframes b { 50% { transform: scale(1.1); filter: brightness(1.2); } }
+        button { background: white; border: none; padding: 15px 40px; border-radius: 30px; font-weight: bold; cursor: pointer; }
+        #status { font-size: 0.8rem; color: #666; margin-top: 20px; font-family: monospace; }
     </style>
 </head>
 <body>
     <div class="glass">
         <div class="orb"></div>
         <h1>ASHA AI</h1>
-        <p>RECEPTIONIST BRAIN ACTIVE</p>
         <button id="micBtn">START MIC TEST</button>
-        <div id="status">Ready for bridge...</div>
+        <div id="status">Ready.</div>
     </div>
 
     <script>
@@ -31,19 +27,27 @@
 
         btn.onclick = async () => {
             if (ws) return;
-            status.innerText = "Connecting to Brain...";
+            
+            // WAKE UP AUDIO CONTEXT
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            if (audioCtx.state === 'suspended') await audioCtx.resume();
+            
+            status.innerText = "Connecting...";
             ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+            ws.binaryType = "arraybuffer"; // FORCE ARRAYBUFFER
             
             ws.onopen = () => { status.innerText = "Bridge Open. Talk now."; btn.innerText = "LISTENING..."; };
+            
             ws.onmessage = async (e) => {
-                if (e.data instanceof Blob) {
-                    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-                    const arrayBuffer = await e.data.arrayBuffer();
-                    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-                    const source = audioCtx.createBufferSource();
-                    source.buffer = audioBuffer;
-                    source.connect(audioCtx.destination);
-                    source.start();
+                if (e.data instanceof ArrayBuffer) {
+                    try {
+                        status.innerText = "Asha is Speaking...";
+                        const audioBuffer = await audioCtx.decodeAudioData(e.data);
+                        const source = audioCtx.createBufferSource();
+                        source.buffer = audioBuffer;
+                        source.connect(audioCtx.destination);
+                        source.start();
+                    } catch (err) { console.error("Audio Decode Error", err); }
                 }
             };
 
