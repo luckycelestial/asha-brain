@@ -21,20 +21,21 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('--- Client Connected ---');
+    console.log('--- Client Connected to Bridge ---');
     
     const geminiWs = new WebSocket(GEMINI_URL);
 
     geminiWs.on('open', () => {
-        console.log('--- Connected to Gemini 3.1 ---');
+        console.log('--- Connected to Gemini 3.1 API ---');
+        // MATCHING YOUR WORKING VOX_AGENT SETUP
         geminiWs.send(JSON.stringify({
             setup: {
                 model: "models/gemini-3.1-flash-live-preview",
-                system_instruction: { parts: [{ text: "You are Asha. Speak Tanglish. Help patients." }] },
-                generation_config: { 
+                system_instruction: { parts: [{ text: "You are Asha. Speak Tanglish. Help patients book appointments." }] },
+                generation_config: {
                     response_modalities: ["AUDIO"],
                     speech_config: {
-                        voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }
+                        voice_config: { prebuilt_voice_config: { voice_name: "Lyra" } }
                     }
                 }
             }
@@ -45,38 +46,38 @@ wss.on('connection', (ws) => {
         try {
             const resp = JSON.parse(data);
             
-            // Support BOTH snake_case and camelCase for Gemini 3.1 Protocol
-            const serverContent = resp.server_content || resp.serverContent;
-            if (!serverContent) return;
-
-            const modelTurn = serverContent.model_turn || serverContent.modelTurn;
-            if (modelTurn?.parts) {
-                modelTurn.parts.forEach(part => {
-                    // Extract Audio (Support both formats)
-                    const audioBase64 = part.inline_data?.data || part.inlineData?.data || part.audio;
-                    if (audioBase64 && ws.readyState === WebSocket.OPEN) {
-                        ws.send(Buffer.from(audioBase64, 'base64'));
+            // Handle both snake_case and camelCase for robustness
+            const content = resp.serverContent || resp.server_content;
+            if (content?.modelTurn?.parts || content?.model_turn?.parts) {
+                const parts = content.modelTurn?.parts || content.model_turn?.parts;
+                parts.forEach(part => {
+                    const audio = part.inlineData?.data || part.inline_data?.data || part.audio;
+                    if (audio && ws.readyState === WebSocket.OPEN) {
+                        ws.send(Buffer.from(audio, 'base64'));
                     }
-
-                    // Extract Text
                     if (part.text && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: "transcript", text: part.text }));
                     }
                 });
             }
-        } catch (e) {
-            console.error('Parse error:', e.message);
-        }
+            
+            if (resp.setupComplete || resp.setup_complete) {
+                console.log('--- Gemini 3.1 Setup SUCCESS ---');
+            }
+            if (resp.error) console.error('Gemini Error:', resp.error);
+            
+        } catch (e) { }
     });
 
     ws.on('message', (data) => {
         if (geminiWs.readyState === WebSocket.OPEN) {
+            // MATCHING YOUR WORKING VOX_AGENT AUDIO INPUT
             geminiWs.send(JSON.stringify({
-                realtime_input: {
-                    media_chunks: [{
-                        mime_type: "audio/pcm;rate=16000",
-                        data: data.toString('base64')
-                    }]
+                realtimeInput: { 
+                    audio: { 
+                        mimeType: "audio/pcm;rate=16000", 
+                        data: data.toString('base64') 
+                    } 
                 }
             }));
         }
@@ -86,4 +87,4 @@ wss.on('connection', (ws) => {
     geminiWs.on('close', () => ws.close());
 });
 
-server.listen(PORT, () => console.log('Asha Protocol v3.1 Fixed'));
+server.listen(PORT, () => console.log('Asha Master Bridge Active'));
