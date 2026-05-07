@@ -53,6 +53,21 @@ wss.on('connection', (ws) => {
                 }
             }
         }));
+
+        // NUDGE: Force an initial greeting
+        setTimeout(() => {
+            if (geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify({
+                    clientContent: {
+                        turns: [{
+                            role: "user",
+                            parts: [{ text: "(The call has just been answered. Greet the patient warmly in Tanglish and ask how you can help.)" }]
+                        }],
+                        turnComplete: true
+                    }
+                }));
+            }
+        }, 500);
     });
 
     // Pipeline: Phone -> Gemini
