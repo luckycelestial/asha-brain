@@ -7,18 +7,18 @@ const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generat
 
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Asha Brain is Active\n');
+    res.end('Asha Brain is Permanent and Active\n');
 });
 
-const wss = new WebSocket.Server({ server, path: '/asha' });
+// Moving back to ROOT path for better compatibility with Render/Railway
+const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
     console.log('Phone Connected to Brain');
     
-    // Heartbeat to keep Render alive
     const heartbeat = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ status: "Asha is Breathing" }));
-    }, 15000);
+    }, 10000);
 
     const geminiWs = new WebSocket(GEMINI_URL);
 
@@ -39,14 +39,11 @@ wss.on('connection', (ws) => {
                             response.serverContent?.modelTurn?.parts?.[0]?.audio;
         
         if (audioBase64 && ws.readyState === WebSocket.OPEN) {
-            // Send as RAW BINARY to reduce overhead
-            const buffer = Buffer.from(audioBase64, 'base64');
-            ws.send(buffer);
+            ws.send(Buffer.from(audioBase64, 'base64'));
         }
     });
 
     ws.on('message', (data) => {
-        // Handle incoming binary PCM from phone
         if (geminiWs.readyState === WebSocket.OPEN) {
             if (Buffer.isBuffer(data)) {
                 geminiWs.send(JSON.stringify({
