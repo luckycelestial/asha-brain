@@ -5,145 +5,99 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
 
+// Move HTML to a separate variable for better memory handling
+const dashboardUI = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Asha Console</title>
+    <style>
+        body { margin: 0; background: #050505; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .orb { width: 100px; height: 100px; border-radius: 50%; background: radial-gradient(circle, #8A2BE2, #4B0082); margin-bottom: 20px; box-shadow: 0 0 30px #8A2BE2; animation: p 2s infinite; }
+        @keyframes p { 50% { transform: scale(1.1); filter: brightness(1.2); } }
+        .box { background: rgba(255,255,255,0.05); padding: 30px; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1); width: 300px; }
+        #log { font-size: 0.7rem; color: #666; margin-top: 20px; height: 60px; overflow-y: auto; text-align: left; }
+        button { background: white; border: none; padding: 10px 20px; border-radius: 20px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <div class="orb"></div>
+        <h2>ASHA BRAIN</h2>
+        <button id="test">START MIC TEST</button>
+        <div id="log">Ready.</div>
+    </div>
+    <script>
+        const log = (m) => document.getElementById('log').innerHTML += '<div>' + m + '</div>';
+        document.getElementById('test').onclick = async () => {
+            const ws = new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+            ws.onopen = () => log("Connected.");
+            ws.onmessage = async (e) => { 
+                if (!(typeof e.data === 'string')) {
+                    const ctx = new AudioContext({sampleRate:24000});
+                    const buf = await ctx.decodeAudioData(await e.data.arrayBuffer());
+                    const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination); s.start();
+                }
+            };
+            const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+            const ctx = new AudioContext({sampleRate:16000});
+            const src = ctx.createMediaStreamSource(stream);
+            const proc = ctx.createScriptProcessor(4096, 1, 1);
+            proc.onaudioprocess = (e) => {
+                const input = e.inputBuffer.getChannelData(0);
+                const pcm = new Int16Array(input.length);
+                for (let i=0; i<input.length; i++) pcm[i] = input[i]*0x7FFF;
+                if (ws.readyState === 1) ws.send(pcm.buffer);
+            };
+            src.connect(proc); proc.connect(ctx.destination);
+            document.getElementById('test').innerText = "LISTENING...";
+        }
+    </script>
+</body>
+</html>
+`;
+
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Asha Brain Console</title>
-            <style>
-                body { margin: 0; background: #050505; color: white; font-family: 'Inter', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
-                .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px; padding: 40px; text-align: center; width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-                .orb { width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, #8A2BE2, #4B0082); margin: 0 auto 30px; box-shadow: 0 0 50px #8A2BE2; animation: pulse 2s infinite ease-in-out; position: relative; }
-                .orb::after { content: ''; position: absolute; top: -10px; left: -10px; right: -10px; bottom: -10px; border-radius: 50%; border: 2px solid rgba(138, 43, 226, 0.3); animation: ripple 2s infinite; }
-                @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 0.8; } 50% { transform: scale(1.1); opacity: 1; filter: brightness(1.2); } }
-                @keyframes ripple { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
-                h1 { margin: 0; font-weight: 300; letter-spacing: 2px; color: #E0E0E0; }
-                p { color: #888; margin: 10px 0 30px; font-size: 0.9rem; }
-                .status { font-size: 0.8rem; padding: 8px 16px; border-radius: 20px; background: rgba(0,255,0,0.1); color: #00FF00; display: inline-block; margin-bottom: 20px; }
-                #log { width: 100%; height: 100px; background: rgba(0,0,0,0.3); border-radius: 12px; margin-top: 20px; padding: 10px; font-family: monospace; font-size: 0.7rem; text-align: left; overflow-y: auto; color: #666; }
-                .btn { background: white; color: black; border: none; padding: 12px 30px; border-radius: 30px; font-weight: 600; cursor: pointer; transition: 0.3s; }
-                .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(255,255,255,0.2); }
-            </style>
-        </head>
-        <body>
-            <div class="glass">
-                <div class="orb"></div>
-                <h1>ASHA BRAIN</h1>
-                <p>AI Receptionist Gateway</p>
-                <div class="status" id="status">● API KEY ACTIVE</div>
-                <button class="btn" id="micBtn">START MIC TEST</button>
-                <div id="log">Waiting for connection...</div>
-            </div>
-
-            <script>
-                const log = document.getElementById('log');
-                const btn = document.getElementById('micBtn');
-                const status = document.getElementById('status');
-                let ws;
-                let audioCtx;
-                let processor;
-
-                function addLog(msg) {
-                    log.innerHTML += '<div>[' + new Date().toLocaleTimeString() + '] ' + msg + '</div>';
-                    log.scrollTop = log.scrollHeight;
-                }
-
-                btn.onclick = async () => {
-                    if (ws) return;
-                    addLog("Initializing Web Bridge...");
-                    ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-                    ws.onopen = () => addLog("Connected to Cloud Brain");
-                    ws.onmessage = async (e) => {
-                        if (typeof e.data === 'string' && e.data.includes('Breathing')) {
-                            status.innerText = "● ASHA IS BREATHING";
-                        } else {
-                            // Handle binary audio from server
-                            const blob = e.data;
-                            const arrayBuffer = await blob.arrayBuffer();
-                            playAudio(arrayBuffer);
-                        }
-                    };
-
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    audioCtx = new AudioContext({ sampleRate: 16000 });
-                    const source = audioCtx.createMediaStreamSource(stream);
-                    processor = audioCtx.createScriptProcessor(4096, 1, 1);
-                    
-                    processor.onaudioprocess = (e) => {
-                        const input = e.inputBuffer.getChannelData(0);
-                        const pcm = new Int16Array(input.length);
-                        for (let i = 0; i < input.length; i++) pcm[i] = input[i] * 0x7FFF;
-                        if (ws.readyState === WebSocket.OPEN) ws.send(pcm.buffer);
-                    };
-
-                    source.connect(processor);
-                    processor.connect(audioCtx.destination);
-                    btn.innerText = "ASHA IS LISTENING...";
-                };
-
-                async function playAudio(buffer) {
-                    const audioBuffer = await audioCtx.decodeAudioData(buffer);
-                    const source = audioCtx.createBufferSource();
-                    source.buffer = audioBuffer;
-                    source.connect(audioCtx.destination);
-                    source.start();
-                }
-            </script>
-        </body>
-        </html>
-    `);
+    res.end(dashboardUI);
 });
 
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('Client Connected');
-    
     const heartbeat = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ status: "Asha is Breathing" }));
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ status: "Breathing" }));
     }, 15000);
 
     const geminiWs = new WebSocket(GEMINI_URL);
-
-    geminiWs.on('error', (err) => console.error('Gemini Error:', err.message));
+    geminiWs.on('error', (e) => console.error(e.message));
 
     geminiWs.on('open', () => {
-        console.log('Connected to Gemini Live');
         geminiWs.send(JSON.stringify({
             setup: {
                 model: "models/gemini-2.0-flash-exp",
-                system_instruction: { parts: [{ text: "You are Asha, a medical receptionist. Speak in Tanglish. Vanakkam! Ask name and issue." }] },
+                system_instruction: { parts: [{ text: "You are Asha. Speak Tanglish. Ask name." }] },
                 generation_config: { response_modalities: ["AUDIO"] }
             }
         }));
     });
 
     geminiWs.on('message', (data) => {
-        const response = JSON.parse(data);
-        const audioBase64 = response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
-                            response.serverContent?.modelTurn?.parts?.[0]?.audio;
-        
-        if (audioBase64 && ws.readyState === WebSocket.OPEN) {
-            ws.send(Buffer.from(audioBase64, 'base64'));
-        }
+        const resp = JSON.parse(data);
+        const audio = resp.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
+                      resp.serverContent?.modelTurn?.parts?.[0]?.audio;
+        if (audio && ws.readyState === WebSocket.OPEN) ws.send(Buffer.from(audio, 'base64'));
     });
 
     ws.on('message', (data) => {
         if (geminiWs.readyState === WebSocket.OPEN) {
-            // Binary support for both Browser and Phone
-            const b64 = data.toString('base64');
             geminiWs.send(JSON.stringify({
-                realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: b64 }] }
+                realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: data.toString('base64') }] }
             }));
         }
     });
 
-    ws.on('close', () => {
-        clearInterval(heartbeat);
-        geminiWs.close();
-    });
+    ws.on('close', () => { clearInterval(heartbeat); geminiWs.close(); });
 });
 
-server.listen(PORT, () => console.log(`Asha Brain on ${PORT}`));
+server.listen(PORT, () => console.log('Asha Live'));
