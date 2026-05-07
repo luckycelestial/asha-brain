@@ -3,24 +3,30 @@ const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenericService.BidiGenerateContent?key=${API_KEY}`;
+
+// CORRECTED URL: GenerativeService, not GenericService
+const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
 
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Asha Brain is Permanent and Active\n');
+    res.end('Asha Brain is Fixed and Active\n');
 });
 
-// Moving back to ROOT path for better compatibility with Render/Railway
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('Phone Connected to Brain');
+    console.log('Phone Connected');
     
     const heartbeat = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ status: "Asha is Breathing" }));
-    }, 10000);
+    }, 15000);
 
     const geminiWs = new WebSocket(GEMINI_URL);
+
+    // CRASH GUARD: Prevent the server from dying if Gemini has an error
+    geminiWs.on('error', (err) => {
+        console.error('Gemini Error:', err.message);
+    });
 
     geminiWs.on('open', () => {
         console.log('Connected to Gemini Live');
@@ -34,13 +40,15 @@ wss.on('connection', (ws) => {
     });
 
     geminiWs.on('message', (data) => {
-        const response = JSON.parse(data);
-        const audioBase64 = response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
-                            response.serverContent?.modelTurn?.parts?.[0]?.audio;
-        
-        if (audioBase64 && ws.readyState === WebSocket.OPEN) {
-            ws.send(Buffer.from(audioBase64, 'base64'));
-        }
+        try {
+            const response = JSON.parse(data);
+            const audioBase64 = response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
+                                response.serverContent?.modelTurn?.parts?.[0]?.audio;
+            
+            if (audioBase64 && ws.readyState === WebSocket.OPEN) {
+                ws.send(Buffer.from(audioBase64, 'base64'));
+            }
+        } catch (e) { console.error('Parse Error:', e.message); }
     });
 
     ws.on('message', (data) => {
@@ -61,4 +69,4 @@ wss.on('connection', (ws) => {
     });
 });
 
-server.listen(PORT, () => console.log(`Asha Brain on ${PORT}`));
+server.listen(PORT, () => console.log(`Asha Brain Fixed on ${PORT}`));
