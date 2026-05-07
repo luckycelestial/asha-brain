@@ -9,6 +9,8 @@ const port = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
 
+let activeConnections = 0;
+
 const server = app.listen(port, () => {
     console.log(`Asha Brain listening on port ${port}`);
 });
@@ -16,27 +18,40 @@ const server = app.listen(port, () => {
 // --- PULSE CHECK ---
 app.get('/', (req, res) => {
     res.send(`
-        <body style="background: #0a0a0a; color: #00ffcc; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; flex-direction: column;">
-            <h1 style="text-shadow: 0 0 20px #00ffcc;">Asha Brain is LIVE 🧠✨</h1>
-            <p style="color: #666;">Waiting for Phone Bridge connection...</p>
-        </body>
+        <html>
+            <body style="font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #0a0a0a; color: white;">
+                <h1 style="color: #4285F4;">Asha Brain is Pulse Check 🧠✨</h1>
+                <div style="padding: 20px; border-radius: 15px; background: #1a1a1a; text-align: center; border: 1px solid #333;">
+                    <p>Status: <span style="color: #10B981; font-weight: bold;">LIVE</span></p>
+                    <p>Bridge Connection: <span style="color: ${activeConnections > 0 ? '#10B981' : '#EF4444'}; font-weight: bold;">${activeConnections > 0 ? '🟢 CONNECTED' : '🔴 DISCONNECTED'}</span></p>
+                    <p style="color: #888; font-size: 0.8em;">Active Links: ${activeConnections}</p>
+                </div>
+            </body>
+        </html>
     `);
 });
 
 const wss = new WebSocketServer({ server });
 
-wss.on('connection', (phoneWs) => {
-    console.log('Phone connected to Asha Brain');
+wss.on('connection', (ws) => {
+    activeConnections++;
+    console.log('New Bridge connection established. Active:', activeConnections);
 
-    // Connect to Google Gemini
+    // Proxy to Gemini
     const geminiWs = new WebSocket(GEMINI_WS_URL);
+
+    ws.on('close', () => {
+        activeConnections--;
+        console.log('Bridge connection closed. Active:', activeConnections);
+        geminiWs.close();
+    });
 
     geminiWs.on('open', () => {
         // Send Setup
         geminiWs.send(JSON.stringify({
             setup: {
                 model: "models/gemini-2.0-flash-exp",
-                system_instruction: { parts: [{ text: "You are Asha, a medical receptionist. Speak in Tanglish." }] },
+                system_instruction: { parts: [{ text: "You are Asha, the smart AI medical receptionist for 'Vox Medical'. Speak in a warm, helpful Tanglish (Tamil + English) style. Vanakkam! Ask for their name, their contact number, and what health issue they have. Then book a slot for them. Always confirm the details clearly at the end. Keep responses concise for telephony." }] },
                 generation_config: {
                     response_modalities: ["AUDIO"],
                     speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Lyra" } } }
