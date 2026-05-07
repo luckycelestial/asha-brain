@@ -85,12 +85,22 @@ wss.on('connection', (ws) => {
     geminiWs.on('message', (data) => {
         try {
             const response = JSON.parse(data);
-            const audioData = response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            
+            // Log server events for debugging
+            if (response.serverContent) console.log('<<< Gemini Model Turn');
+            if (response.setupComplete) console.log('<<< Gemini Setup Complete');
+
+            // Extraction: Check multiple possible paths for audio data
+            const audioData = 
+                response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
+                response.serverContent?.modelTurn?.parts?.[0]?.audio;
+
             if (audioData) {
-                ws.send(audioData); // Send raw audio back to phone
+                console.log(`>>> Sending ${audioData.length} bytes of audio to phone`);
+                ws.send(audioData); 
             }
         } catch (e) {
-            // Handle non-JSON or parsing errors gracefully
+            console.error('Gemini Parsing Error:', e);
         }
     });
 
