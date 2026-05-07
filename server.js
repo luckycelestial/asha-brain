@@ -1,44 +1,22 @@
-const express = require('express');
-const { WebSocketServer } = require('ws');
 const WebSocket = require('ws');
+const http = require('http');
 
-const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
+const API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenericService.BidiGenerateContent?key=${API_KEY}`;
 
-// --- CONFIG ---
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
-
-let activeConnections = 0;
-
-const server = app.listen(port, () => {
-    console.log(`Asha Brain listening on port ${port}`);
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Asha Brain is Active\n');
 });
 
-// --- PULSE CHECK ---
-app.get('/', (req, res) => {
-    res.send(`
-        <html>
-            <body style="font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #0a0a0a; color: white;">
-                <h1 style="color: #4285F4;">Asha Brain is Pulse Check 🧠✨</h1>
-                <div style="padding: 20px; border-radius: 15px; background: #1a1a1a; text-align: center; border: 1px solid #333;">
-                    <p>Status: <span style="color: #10B981; font-weight: bold;">LIVE</span></p>
-                    <p>Bridge Connection: <span style="color: ${activeConnections > 0 ? '#10B981' : '#EF4444'}; font-weight: bold;">${activeConnections > 0 ? '🟢 CONNECTED' : '🔴 DISCONNECTED'}</span></p>
-                    <p style="color: #888; font-size: 0.8em;">Active Links: ${activeConnections}</p>
-                </div>
-            </body>
-        </html>
-    `);
-});
-
-const wss = new WebSocketServer({ server });
+const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    activeConnections++;
-    console.log('New Bridge connection established. Active:', activeConnections);
-
-    // Proxy to Gemini
-    const geminiWs = new WebSocket(GEMINI_WS_URL);
+    console.log('Phone Connected to Brain');
+    
+    // Connect to Gemini Live API
+    const geminiWs = new WebSocket(GEMINI_URL);
 
     geminiWs.on('open', () => {
         console.log('Connected to Gemini Live API');
@@ -54,62 +32,63 @@ wss.on('connection', (ws) => {
             }
         }));
 
-        // NUDGE: Force an initial greeting
+        // Initial Greeting
         setTimeout(() => {
             if (geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({
                     clientContent: {
                         turns: [{
                             role: "user",
-                            parts: [{ text: "(The call has just been answered. Greet the patient warmly in Tanglish and ask how you can help.)" }]
+                            parts: [{ text: "Vanakkam! I am Asha from Vox Medical. How can I help you today?" }]
                         }],
                         turnComplete: true
                     }
                 }));
             }
-        }, 500);
-    });
-
-    // Pipeline: Phone -> Gemini
-    ws.on('message', (data) => {
-        if (geminiWs.readyState === WebSocket.OPEN) {
-            geminiWs.send(JSON.stringify({
-                realtimeInput: {
-                    audio: { mimeType: "audio/pcm;rate=16000", data: data.toString() }
-                }
-            }));
-        }
+        }, 1000);
     });
 
     // Pipeline: Gemini -> Phone
     geminiWs.on('message', (data) => {
         try {
             const response = JSON.parse(data);
-            
-            // Log server events for debugging
-            if (response.serverContent) console.log('<<< Gemini Model Turn');
-            if (response.setupComplete) console.log('<<< Gemini Setup Complete');
-
-            // Extraction: Check multiple possible paths for audio data
             const audioData = 
                 response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
                 response.serverContent?.modelTurn?.parts?.[0]?.audio;
 
             if (audioData) {
-                console.log(`>>> Sending ${audioData.length} bytes of audio to phone`);
+                console.log(`>>> Sending Audio to Phone (${audioData.length} bytes)`);
                 ws.send(audioData); 
             }
         } catch (e) {
-            console.error('Gemini Parsing Error:', e);
+            console.error('Gemini Msg Error:', e);
+        }
+    });
+
+    // Pipeline: Phone -> Gemini
+    ws.on('message', (data) => {
+        if (geminiWs.readyState === WebSocket.OPEN) {
+            const chunk = data.toString();
+            geminiWs.send(JSON.stringify({
+                realtimeInput: {
+                    mediaChunks: [{
+                        mimeType: "audio/pcm;rate=16000",
+                        data: chunk
+                    }]
+                }
+            }));
         }
     });
 
     ws.on('close', () => {
-        activeConnections--;
-        console.log('Bridge connection closed. Active:', activeConnections);
+        console.log('Phone Disconnected');
         geminiWs.close();
     });
 
-    geminiWs.on('error', (err) => console.error('Gemini WS Error:', err));
+    geminiWs.on('error', (err) => console.error('Gemini Error:', err));
     ws.on('error', (err) => console.error('Phone WS Error:', err));
+});
+
+server.listen(PORT, () => {
+    console.log(`Asha Brain listening on port ${PORT}`);
 });
