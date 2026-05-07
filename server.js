@@ -10,85 +10,45 @@ const server = http.createServer((req, res) => {
     res.end('Asha Brain is Active\n');
 });
 
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ server, path: '/asha' });
 
 wss.on('connection', (ws) => {
     console.log('Phone Connected to Brain');
     
-    // Connect to Gemini Live API
+    // Send immediate heartbeat
+    ws.send(JSON.stringify({ status: "Asha is Breathing" }));
+
     const geminiWs = new WebSocket(GEMINI_URL);
 
     geminiWs.on('open', () => {
-        console.log('Connected to Gemini Live API');
-        // Send Setup
+        console.log('Connected to Gemini Live');
         geminiWs.send(JSON.stringify({
             setup: {
                 model: "models/gemini-2.0-flash-exp",
-                system_instruction: { parts: [{ text: "You are Asha, the smart AI medical receptionist for 'Vox Medical'. Speak in a warm, helpful Tanglish (Tamil + English) style. Vanakkam! Ask for their name, their contact number, and what health issue they have. Then book a slot for them. Always confirm the details clearly at the end. Keep responses concise for telephony." }] },
-                generation_config: {
-                    response_modalities: ["AUDIO"],
-                    speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Lyra" } } }
-                }
+                system_instruction: { parts: [{ text: "You are Asha, a warm medical receptionist. Speak in Tanglish. Vanakkam! Ask for name and issue." }] },
+                generation_config: { response_modalities: ["AUDIO"] }
             }
         }));
-
-        // Initial Greeting
-        setTimeout(() => {
-            if (geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify({
-                    clientContent: {
-                        turns: [{
-                            role: "user",
-                            parts: [{ text: "Vanakkam! I am Asha from Vox Medical. How can I help you today?" }]
-                        }],
-                        turnComplete: true
-                    }
-                }));
-            }
-        }, 1000);
     });
 
-    // Pipeline: Gemini -> Phone
     geminiWs.on('message', (data) => {
-        try {
-            const response = JSON.parse(data);
-            const audioData = 
-                response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
-                response.serverContent?.modelTurn?.parts?.[0]?.audio;
-
-            if (audioData) {
-                console.log(`>>> Sending Audio to Phone (${audioData.length} bytes)`);
-                ws.send(audioData); 
-            }
-        } catch (e) {
-            console.error('Gemini Msg Error:', e);
-        }
+        const response = JSON.parse(data);
+        const audioData = response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
+                          response.serverContent?.modelTurn?.parts?.[0]?.audio;
+        if (audioData) ws.send(audioData);
     });
 
-    // Pipeline: Phone -> Gemini
     ws.on('message', (data) => {
         if (geminiWs.readyState === WebSocket.OPEN) {
-            const chunk = data.toString();
             geminiWs.send(JSON.stringify({
                 realtimeInput: {
-                    mediaChunks: [{
-                        mimeType: "audio/pcm;rate=16000",
-                        data: chunk
-                    }]
+                    mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: data.toString() }]
                 }
             }));
         }
     });
 
-    ws.on('close', () => {
-        console.log('Phone Disconnected');
-        geminiWs.close();
-    });
-
-    geminiWs.on('error', (err) => console.error('Gemini Error:', err));
-    ws.on('error', (err) => console.error('Phone WS Error:', err));
+    ws.on('close', () => geminiWs.close());
 });
 
-server.listen(PORT, () => {
-    console.log(`Asha Brain listening on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Asha Brain on ${PORT}`));
