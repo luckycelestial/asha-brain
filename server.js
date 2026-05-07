@@ -21,16 +21,24 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('Client Connected to Brain');
+    console.log('--- Client Connected to Asha Brain ---');
     
     const geminiWs = new WebSocket(GEMINI_URL);
 
     geminiWs.on('open', () => {
+        console.log('--- Connected to Google Gemini Live API ---');
         geminiWs.send(JSON.stringify({
             setup: {
                 model: "models/gemini-2.0-flash-exp",
-                system_instruction: { parts: [{ text: "You are Asha, the friendly AI medical receptionist for VoxAI Clinic. Speak Tanglish. Help book appointments." }] },
-                generation_config: { response_modalities: ["AUDIO"] }
+                system_instruction: { 
+                    parts: [{ text: "You are Asha, a medical receptionist. Speak Tanglish (Tamil + English). Be warm and helpful." }] 
+                },
+                generation_config: { 
+                    response_modalities: ["AUDIO"],
+                    speech_config: {
+                        voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }
+                    }
+                }
             }
         }));
     });
@@ -39,34 +47,47 @@ wss.on('connection', (ws) => {
         try {
             const resp = JSON.parse(data);
             
-            // Forward Audio
+            // Handle Audio Data
             const audio = resp.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
                           resp.serverContent?.modelTurn?.parts?.[0]?.audio;
             if (audio && ws.readyState === WebSocket.OPEN) {
                 ws.send(Buffer.from(audio, 'base64'));
             }
 
-            // Forward Transcripts for the UI
+            // Handle Text/Transcript Data
             const text = resp.serverContent?.modelTurn?.parts?.[0]?.text;
             if (text && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "transcript", text }));
             }
-        } catch (e) { }
-    });
 
-    ws.on('message', (data) => {
-        // Handle incoming audio from browser
-        if (geminiWs.readyState === WebSocket.OPEN) {
-            if (data instanceof Buffer) {
-                geminiWs.send(JSON.stringify({
-                    realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: data.toString('base64') }] }
-                }));
-            }
+            // Log any errors from Google
+            if (resp.error) console.error('Gemini API Error:', resp.error);
+            
+        } catch (e) {
+            console.error('Error processing Gemini message:', e.message);
         }
     });
 
-    ws.on('close', () => geminiWs.close());
-    geminiWs.on('close', () => ws.close());
+    ws.on('message', (data) => {
+        if (geminiWs.readyState === WebSocket.OPEN) {
+            // Forward raw PCM audio from client to Gemini
+            const base64Audio = data.toString('base64');
+            geminiWs.send(JSON.stringify({
+                realtime_input: {
+                    media_chunks: [{
+                        mime_type: "audio/pcm;rate=16000",
+                        data: base64Audio
+                    }]
+                }
+            }));
+        }
+    });
+
+    geminiWs.on('error', (e) => console.error('Gemini WebSocket Error:', e.message));
+    ws.on('close', () => {
+        console.log('Client Disconnected');
+        geminiWs.close();
+    });
 });
 
-server.listen(PORT, () => console.log('Asha Switchboard Ready'));
+server.listen(PORT, () => console.log('Asha Switchboard v2.0 (Gemini 2.0 Flash) Active'));
