@@ -13,6 +13,16 @@ const server = app.listen(port, () => {
     console.log(`Asha Brain listening on port ${port}`);
 });
 
+// --- PULSE CHECK ---
+app.get('/', (req, res) => {
+    res.send(`
+        <body style="background: #0a0a0a; color: #00ffcc; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; flex-direction: column;">
+            <h1 style="text-shadow: 0 0 20px #00ffcc;">Asha Brain is LIVE 🧠✨</h1>
+            <p style="color: #666;">Waiting for Phone Bridge connection...</p>
+        </body>
+    `);
+});
+
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (phoneWs) => {
