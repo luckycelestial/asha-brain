@@ -6,7 +6,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // --- CONFIG ---
-const GEMINI_API_KEY = "AIzaSyCskHKJdYU1HWvrXfiMMfYYmM-lk9GYWlk";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
 
 const server = app.listen(port, () => {
