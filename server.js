@@ -21,18 +21,16 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    console.log('--- Client Connected: Gemini 3.1 Mode ---');
+    console.log('--- Client Connected ---');
     
     const geminiWs = new WebSocket(GEMINI_URL);
 
     geminiWs.on('open', () => {
-        console.log('--- Live Bridge: Gemini 3.1 Active ---');
+        console.log('--- Connected to Gemini 3.1 ---');
         geminiWs.send(JSON.stringify({
             setup: {
-                model: "models/gemini-3.1-flash-live-preview", // UPDATED TO 3.1
-                system_instruction: { 
-                    parts: [{ text: "You are Asha, the VoxAI medical receptionist. Speak Tanglish. Help patients book appointments." }] 
-                },
+                model: "models/gemini-3.1-flash-live-preview",
+                system_instruction: { parts: [{ text: "You are Asha. Speak Tanglish. Help patients." }] },
                 generation_config: { 
                     response_modalities: ["AUDIO"],
                     speech_config: {
@@ -47,25 +45,32 @@ wss.on('connection', (ws) => {
         try {
             const resp = JSON.parse(data);
             
-            // Forward Audio (A2A Native)
-            const audio = resp.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data ||
-                          resp.serverContent?.modelTurn?.parts?.[0]?.audio;
-            if (audio && ws.readyState === WebSocket.OPEN) {
-                ws.send(Buffer.from(audio, 'base64'));
-            }
+            // Support BOTH snake_case and camelCase for Gemini 3.1 Protocol
+            const serverContent = resp.server_content || resp.serverContent;
+            if (!serverContent) return;
 
-            // Forward Transcripts
-            const text = resp.serverContent?.modelTurn?.parts?.[0]?.text;
-            if (text && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "transcript", text }));
+            const modelTurn = serverContent.model_turn || serverContent.modelTurn;
+            if (modelTurn?.parts) {
+                modelTurn.parts.forEach(part => {
+                    // Extract Audio (Support both formats)
+                    const audioBase64 = part.inline_data?.data || part.inlineData?.data || part.audio;
+                    if (audioBase64 && ws.readyState === WebSocket.OPEN) {
+                        ws.send(Buffer.from(audioBase64, 'base64'));
+                    }
+
+                    // Extract Text
+                    if (part.text && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "transcript", text: part.text }));
+                    }
+                });
             }
-            
-        } catch (e) { }
+        } catch (e) {
+            console.error('Parse error:', e.message);
+        }
     });
 
     ws.on('message', (data) => {
         if (geminiWs.readyState === WebSocket.OPEN) {
-            // Forwarding native audio to Gemini 3.1
             geminiWs.send(JSON.stringify({
                 realtime_input: {
                     media_chunks: [{
@@ -78,6 +83,7 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => geminiWs.close());
+    geminiWs.on('close', () => ws.close());
 });
 
-server.listen(PORT, () => console.log('Asha Switchboard: GEMINI 3.1 LIVE MODE'));
+server.listen(PORT, () => console.log('Asha Protocol v3.1 Fixed'));
