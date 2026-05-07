@@ -40,13 +40,8 @@ wss.on('connection', (ws) => {
     // Proxy to Gemini
     const geminiWs = new WebSocket(GEMINI_WS_URL);
 
-    ws.on('close', () => {
-        activeConnections--;
-        console.log('Bridge connection closed. Active:', activeConnections);
-        geminiWs.close();
-    });
-
     geminiWs.on('open', () => {
+        console.log('Connected to Gemini Live API');
         // Send Setup
         geminiWs.send(JSON.stringify({
             setup: {
@@ -61,9 +56,8 @@ wss.on('connection', (ws) => {
     });
 
     // Pipeline: Phone -> Gemini
-    phoneWs.on('message', (data) => {
+    ws.on('message', (data) => {
         if (geminiWs.readyState === WebSocket.OPEN) {
-            // Assume phone sends raw PCM base64
             geminiWs.send(JSON.stringify({
                 realtimeInput: {
                     audio: { mimeType: "audio/pcm;rate=16000", data: data.toString() }
@@ -74,12 +68,23 @@ wss.on('connection', (ws) => {
 
     // Pipeline: Gemini -> Phone
     geminiWs.on('message', (data) => {
-        const response = JSON.parse(data);
-        const audioData = response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-        if (audioData) {
-            phoneWs.send(audioData); // Send raw audio back to phone
+        try {
+            const response = JSON.parse(data);
+            const audioData = response.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audioData) {
+                ws.send(audioData); // Send raw audio back to phone
+            }
+        } catch (e) {
+            // Handle non-JSON or parsing errors gracefully
         }
     });
 
-    phoneWs.on('close', () => geminiWs.close());
+    ws.on('close', () => {
+        activeConnections--;
+        console.log('Bridge connection closed. Active:', activeConnections);
+        geminiWs.close();
+    });
+
+    geminiWs.on('error', (err) => console.error('Gemini WS Error:', err));
+    ws.on('error', (err) => console.error('Phone WS Error:', err));
 });
